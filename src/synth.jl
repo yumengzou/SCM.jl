@@ -4,12 +4,12 @@ using LinearAlgebra
 using JuMP, Ipopt
 using Optim
 
-function loss_V(v; Z₁, Z₀, Y₁, Y₀)
+function loss_V(v; Z1_scaled, Z0_scaled, Y1, Y0)
     if abs(sum(v)) < 1e-6
         return 1e6
     end
-    num_controls = size(Z₀)[2];
-    T₀ = size(Y₁)[1];
+    num_controls = size(Z0_scaled)[2];
+    num_prior_periods = size(Y1)[1];
     
     # make sure vector v is a weight vector
     # create a diagonal matrix out of the vector v
@@ -18,8 +18,8 @@ function loss_V(v; Z₁, Z₀, Y₁, Y₀)
     # Solve the w that minimizes (Z₁-Z₀*w)'*V*(Z₁-Z₀*w) for a given V
     model = Model(Ipopt.Optimizer);
     set_silent(model);
-    H = Z₀' * V * Z₀;
-    c = -1 * vec(Z₁' * V * Z₀);
+    H = Z0_scaled' * V * Z0_scaled;
+    c = -1 * vec(Z1_scaled' * V * Z0_scaled);
     @variable(model, 0 <= w[1:num_controls] <= 1);
     @constraint(model, sum(w) == 1);
     @objective(model, Min, c' * w + 0.5 * w' * H * w);
@@ -27,8 +27,8 @@ function loss_V(v; Z₁, Z₀, Y₁, Y₀)
     w_sol= value.(w);
 
     # compute the Mean Squared Prediction Error
-    v_loss = (Y₁ - Y₀ * w_sol)' * (Y₁ - Y₀ * w_sol);
-    v_loss = only(v_loss) / T₀;
+    v_loss = (Y1 - Y0 * w_sol)' * (Y1 - Y0 * w_sol);
+    v_loss = only(v_loss) / num_prior_periods;
     return v_loss
 end
 
@@ -40,7 +40,7 @@ function synth(Z1, Z0, Y1, Y0)
     
     num_predictors = size(Z1)[1];
     num_controls = size(Z0)[2];
-    T₀ = size(Y1)[1];
+    num_prior_periods = size(Y1)[1];
     
     # normalize predictors
     Z = hcat(Z1, Z0);
@@ -52,7 +52,7 @@ function synth(Z1, Z0, Y1, Y0)
     # optimize V, using different starting values
     ## equal weight starting value
     v_start1 = fill(1/num_predictors, num_predictors);
-    l(v) = loss_V(v; Z₁ = Z1_scaled, Z₀ = Z0_scaled, Y₁ = Y1, Y₀ = Y0);
+    l(v) = loss_V(v; Z1_scaled = Z1_scaled, Z0_scaled = Z0_scaled, Y1 = Y1, Y0 = Y0);
     lower = fill(-10, num_predictors);
     upper = fill(10, num_predictors);
     v_opt1 = optimize(
@@ -64,10 +64,10 @@ function synth(Z1, Z0, Y1, Y0)
     Z = hcat(Z1_scaled, Z0_scaled);
     Z = hcat(fill(1, num_controls+1), Z');
     Y = hcat(Y1, Y0)';
-    βs = inv(Z' * Z) * (Z' * Y);      # βs for all pre-treatment period outcome
-    βs = βs[2:(num_predictors+1), :]; # remove the β₀ for the constant term
-    β_sq_sum = diag(βs * βs');        # square and then sum βₖs across the pre-treatment period 
-    v_start2 = β_sq_sum / sum(β_sq_sum);
+    betas = inv(Z' * Z) * (Z' * Y);      # βs for all pre-treatment period outcome
+    betas = betas[2:(num_predictors+1), :]; # remove the β₀ for the constant term
+    beta_sq_sum = diag(betas * betas');        # square and then sum βₖs across the pre-treatment period 
+    v_start2 = beta_sq_sum / sum(beta_sq_sum);
     v_opt2 = optimize(
         l, lower, upper, v_start2, Fminbox(LBFGS()),
         Optim.Options(x_abstol = 5e-4, f_abstol = 1e-5, iterations = 1000)
