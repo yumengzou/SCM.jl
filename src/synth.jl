@@ -53,11 +53,9 @@ function synth(Z1, Z0, Y1, Y0)
     ## equal weight starting value
     v_start1 = fill(1/num_predictors, num_predictors);
     l(v) = loss_V(v; Z1_scaled = Z1_scaled, Z0_scaled = Z0_scaled, Y1 = Y1, Y0 = Y0);
-    lower = fill(-10, num_predictors);
-    upper = fill(10, num_predictors);
     v_opt1 = optimize(
-        l, lower, upper, v_start1, Fminbox(LBFGS()),
-        Optim.Options(x_abstol = 5e-4, f_abstol = 1e-5, iterations = 1000)
+        l, v_start1, 
+        Optim.Options(iterations = 2000)
     );
 
     ## regression-based starting values
@@ -69,8 +67,8 @@ function synth(Z1, Z0, Y1, Y0)
     beta_sq_sum = diag(betas * betas');        # square and then sum βₖs across the pre-treatment period 
     v_start2 = beta_sq_sum / sum(beta_sq_sum);
     v_opt2 = optimize(
-        l, lower, upper, v_start2, Fminbox(LBFGS()),
-        Optim.Options(x_abstol = 5e-4, f_abstol = 1e-5, iterations = 1000)
+        l, v_start2, 
+        Optim.Options(iterations = 2000)
     );
     
     # pick the best V
